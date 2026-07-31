@@ -19,7 +19,7 @@
     # EVE-NG上のDynamipsディレクトリ
     dynamips_dir: /opt/unetlab/addons/dynamips
 
-    # CircleCIユーザーが使用する秘密鍵
+    # CircleCIユーザー用秘密鍵
     ssh_private_key: /home/circleci/.ssh/circleci_eveng
 
   tasks:
@@ -92,13 +92,30 @@
 
     - name: Extract Cisco 7200 image on EVE-NG
       ansible.builtin.raw: |
-        set -e
         cd "{{ workdir }}"
         rm -f "{{ image_file }}"
+
         unzip -p "{{ image_bin }}" > "{{ image_file }}"
-        test -f "{{ image_file }}"
-        test -s "{{ image_file }}"
+        unzip_rc=$?
+
+        if [ "$unzip_rc" -gt 1 ]; then
+          echo "ERROR: unzip failed with exit code ${unzip_rc}"
+          rm -f "{{ image_file }}"
+          exit "$unzip_rc"
+        fi
+
+        if [ "$unzip_rc" -eq 1 ]; then
+          echo "WARNING: unzip completed with warnings; validating output file"
+        fi
+
+        if [ ! -s "{{ image_file }}" ]; then
+          echo "ERROR: extracted image is missing or empty"
+          exit 10
+        fi
+
+        echo "Cisco image extraction completed"
         ls -lh "{{ image_file }}"
+        exit 0
       register: extract_result
       changed_when: true
 
@@ -110,7 +127,9 @@
       ansible.builtin.raw: |
         set -e
         mkdir -p "{{ dynamips_dir }}"
-        cp -f "{{ workdir }}/{{ image_file }}" "{{ dynamips_dir }}/{{ image_file }}"
+        cp -f \
+          "{{ workdir }}/{{ image_file }}" \
+          "{{ dynamips_dir }}/{{ image_file }}"
         chmod 0644 "{{ dynamips_dir }}/{{ image_file }}"
         test -f "{{ dynamips_dir }}/{{ image_file }}"
         test -s "{{ dynamips_dir }}/{{ image_file }}"
